@@ -1,8 +1,9 @@
 import logging
 import os
-from aiogram import Bot, Dispatcher, types
+from aiogram import Bot, Dispatcher, types, Router
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
-from aiogram.utils import executor
+from aiogram.filters import Command
+from aiogram.enums import ParseMode
 from dotenv import load_dotenv
 
 # Загружаем переменные из .env файла
@@ -15,8 +16,9 @@ ADMIN_USERNAME = "@sazwwww"
 WEB_APP_URL = "https://realystycks1.github.io/1win-signalsss/"
 
 logging.basicConfig(level=logging.INFO)
-bot = Bot(token=API_TOKEN, parse_mode="HTML")
-dp = Dispatcher(bot)
+bot = Bot(token=API_TOKEN, parse_mode=ParseMode.HTML)
+dp = Dispatcher()
+router = Router()
 
 users_db = {}   # user_id : 1win_id
 
@@ -31,34 +33,38 @@ async def check_sub(user_id):
         return False
 
 
-@dp.message_handler(commands=['start'])
+@router.message(Command("start"))
 async def start(message: types.Message):
     sub = await check_sub(message.from_user.id)
 
     if not sub:
-        kb = InlineKeyboardMarkup()
-        kb.add(InlineKeyboardButton("✅ Я подписался", callback_data="check_sub"))
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="✅ Я подписался", callback_data="check_sub")]
+        ])
         await message.answer(
             f"🚫 Для доступа к боту подпишитесь на канал: {CHANNEL_USERNAME}\n\nПосле нажмите кнопку ниже",
             reply_markup=kb
         )
         return
 
-    kb = InlineKeyboardMarkup(row_width=2)
-    kb.add(
-        InlineKeyboardButton("🎮 Сигналы / Игры", callback_data="games"),
-        InlineKeyboardButton("👤 Профиль", callback_data="profile"),
-        InlineKeyboardButton("📖 Инструкция", callback_data="info"),
-        InlineKeyboardButton("📩 Связь", url=f"https://t.me/{ADMIN_USERNAME.replace('@','')}")
-    )
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="🎮 Сигналы / Игры", callback_data="games"),
+            InlineKeyboardButton(text="👤 Профиль", callback_data="profile")
+        ],
+        [
+            InlineKeyboardButton(text="📖 Инструкция", callback_data="info"),
+            InlineKeyboardButton(text="📩 Связь", url=f"https://t.me/{ADMIN_USERNAME.replace('@','')}")
+        ]
+    ])
 
     await message.answer(
-        "✅ Доступ разрешен\n\nВыберите пункт меню:",
+        "✅ Доступ разрешен\n\nВыберите пункт менку:",
         reply_markup=kb
     )
 
 
-@dp.callback_query_handler(text="check_sub")
+@router.callback_query(lambda call: call.data == "check_sub")
 async def recheck(call: types.CallbackQuery):
     sub = await check_sub(call.from_user.id)
 
@@ -70,9 +76,8 @@ async def recheck(call: types.CallbackQuery):
     await call.answer()
 
 
-@dp.callback_query_handler(text="profile")
+@router.callback_query(lambda call: call.data == "profile")
 async def profile(call: types.CallbackQuery):
-
     if call.from_user.id in users_db:
         profile_text = f"👤 Ваш профиль:\n\n🔑 1WIN ID: {users_db[call.from_user.id]}"
     else:
@@ -82,30 +87,21 @@ async def profile(call: types.CallbackQuery):
     await call.answer()
 
 
-@dp.message_handler(lambda msg: msg.text.isdigit())
+@router.message(lambda msg: msg.text.isdigit())
 async def save_id(message: types.Message):
-
     users_db[message.from_user.id] = message.text
-
-    await message.answer(
-        "✅ ID сохранён\n\nТеперь вам открыт доступ к сигналал"
-    )
+    await message.answer("✅ ID сохранён\n\nТеперь вам открыт доступ к сигналам")
 
 
-@dp.callback_query_handler(text="games")
+@router.callback_query(lambda call: call.data == "games")
 async def games(call: types.CallbackQuery):
-
     if call.from_user.id not in users_db:
         await call.answer("Сначала введите ваш 1WIN ID в профиле", show_alert=True)
         return
 
-    kb = InlineKeyboardMarkup()
-    kb.add(
-        InlineKeyboardButton(
-            "🎮 Открыть сигналы",
-            web_app=WebAppInfo(url=WEB_APP_URL)
-        )
-    )
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🎮 Открыть сигналы", web_app=WebAppInfo(url=WEB_APP_URL))]
+    ])
 
     await call.message.answer(
         "🎮 Нажмите кнопку для получения сигналов:",
@@ -114,9 +110,8 @@ async def games(call: types.CallbackQuery):
     await call.answer()
 
 
-@dp.callback_query_handler(text="info")
+@router.callback_query(lambda call: call.data == "info")
 async def info(call: types.CallbackQuery):
-
     text = """Бот основан и обучен на кластере нейросети 🖥  
 Для тренировки бота было сыграно 🎰10.000+ игр.
 
@@ -149,5 +144,10 @@ async def info(call: types.CallbackQuery):
     await call.answer()
 
 
+async def main():
+    dp.include_router(router)
+    await dp.start_polling(bot)
+
 if __name__ == "__main__":
-    executor.start_polling(dp)
+    import asyncio
+    asyncio.run(main())
